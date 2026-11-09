@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function mine(side) {
+      return request.auth != null && request.auth.token.email ==
+        (side == 'a' ? 'siebe.kineticduel@example.com' : 'alburt.kineticduel@example.com');
+    }
+    function player() { return mine('a') || mine('b'); }
+
+    match /athletes/{side} {
+      allow read: if player();
+      allow write: if (side == 'a' || side == 'b') && mine(side);
+      match /posts/{post} {
+        allow read: if player();
+        allow write: if (side == 'a' || side == 'b') && mine(side);
+      }
+    }
+    // A finished week can be written once and never changed.
+    match /weeks/{week} {
+      allow read, create: if player();
+    }
+  }
+}
