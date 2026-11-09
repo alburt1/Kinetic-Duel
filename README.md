@@ -34,3 +34,6 @@ Works in English and Dutch. Put separate things between commas.
     bench 4x8 70kg all out, ran 5km, 150g protein, slept 8 hours
     squats 8 reps 100kg
     45 min voetbal, 8u geslapen
+
+## AI reader
+Posts are read by Gemini through `netlify/functions/read-workout.mjs`. Add a free key from https://aistudio.google.com/apikey to Netlify as the environment variable `GEMINI_API_KEY`, then redeploy. Without it, the site uses the simple built-in reader.
