@@ -58,9 +58,10 @@ export default async req => {
   const deadline = Date.now() + 9000, errors = [];
   // Fastest models first, each with its own short time limit, so a slow one can't use up the whole budget.
   const attempts = [
-    [process.env.GEMINI_MODEL || "gemini-flash-lite-latest", {}, 4500],
-    ["gemini-2.5-flash", { thinkingConfig: { thinkingBudget: 0 } }, 3500],
-    ["gemini-2.5-flash-lite", {}, 3000]
+    [process.env.GEMINI_MODEL || "gemini-3.5-flash-lite", {}, 4000],
+    ["gemini-3.1-flash-lite", {}, 3500],
+    ["gemini-flash-lite-latest", {}, 3000],
+    ["gemini-3.6-flash", { thinkingConfig: { thinkingLevel: "minimal" } }, 3000]
   ];
   for (const [model, extra, cap] of attempts) {
     const left = deadline - Date.now();
@@ -73,7 +74,7 @@ export default async req => {
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt(text) }] }], generationConfig: { temperature: 0.1, responseMimeType: "application/json", ...extra } })
       });
       if (!r.ok) {
-        const msg = ((await r.json().catch(() => ({}))).error?.message || "").slice(0, 80);
+        const msg = ((await r.json().catch(() => ({}))).error?.message || "").slice(0, 40);
         errors.push(`${model}: ${r.status} ${msg}`); console.log(model, r.status, msg); continue;
       }
       const data = await r.json();
