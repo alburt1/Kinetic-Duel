@@ -385,7 +385,7 @@ async function understand(text){
     const r=await fetch("/.netlify/functions/read-workout",{method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+token},body:JSON.stringify({text})});
     if(r.ok)return{...cleanAI(await r.json()),reader:"ai"};
     const j=await r.json().catch(()=>({})),why=j.error||"";
-    aiWhy=r.status===404?"the AI file isn't in netlify/functions":/GEMINI_API_KEY/.test(why)?"the GEMINI_API_KEY is missing in Netlify":r.status===401?"your login couldn't be checked":r.status===502?"Gemini said "+((j.details||[]).join(", ")||"no answer"):"error "+r.status;
+    aiWhy=r.status===404?"the AI file isn't in netlify/functions":/GEMINI_API_KEY/.test(why)?"the GEMINI_API_KEY is missing in Netlify":r.status===401?"your login couldn't be checked":r.status===502&&j.details?"Gemini said "+j.details.join(", "):r.status>=500?"the AI took longer than 10 seconds":"error "+r.status;
   }catch(e){aiWhy="the site couldn't reach the AI"}
   toast("AI reader unavailable ("+aiWhy+"), so the simple reader was used.");
   return{...readLocal(text),reader:"simple"};
