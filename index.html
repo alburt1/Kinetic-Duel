@@ -230,7 +230,8 @@ const LIFTS={
  "Squat":{quads:1,glutes:.7,core:.3},"Leg press":{quads:1,glutes:.5},"Lunges":{quads:.8,glutes:.8,hams:.3},
  "Deadlift":{back:.7,glutes:1,hams:.8,core:.3},"Romanian deadlift":{hams:1,glutes:.7,back:.3},
  "Leg curl":{hams:1},"Hip thrust":{glutes:1,hams:.3},"Calf raise":{calves:1},
- "Crunches":{core:1,bw:.3},"Hanging leg raise":{core:1,bw:.3}
+ "Crunches":{core:1,bw:.3},"Hanging leg raise":{core:1,bw:.3},
+ "Plank":{core:1,shoulders:.3,glutes:.2,bw:.65},"Side plank":{core:1,shoulders:.3,bw:.6},"Wall sit":{quads:1,glutes:.3,bw:.6}
 };
 /* met: easy, solid, all-out. Remaining keys: equivalent hard sets per 30 minutes. */
 const CARDIO={
@@ -245,7 +246,7 @@ const CARDIO={
 const resp=s=>1-Math.exp(-s/10);
 
 /* Realistic one-rep max for a trained lifter, as a fraction of bodyweight. */
-const STD={"Bench press":1,"Incline dumbbell press":.8,"Push-ups":.9,"Dips":1.2,"Pull-ups":1.15,"Lat pulldown":.9,"Barbell row":.9,"Overhead press":.65,"Lateral raise":.3,"Biceps curl":.45,"Triceps extension":.45,"Squat":1.4,"Leg press":2.5,"Lunges":.8,"Deadlift":1.7,"Romanian deadlift":1.2,"Leg curl":.7,"Hip thrust":1.6,"Calf raise":1.3,"Crunches":.4,"Hanging leg raise":.4};
+const STD={"Plank":1.1,"Side plank":.9,"Wall sit":1.4,"Bench press":1,"Incline dumbbell press":.8,"Push-ups":.9,"Dips":1.2,"Pull-ups":1.15,"Lat pulldown":.9,"Barbell row":.9,"Overhead press":.65,"Lateral raise":.3,"Biceps curl":.45,"Triceps extension":.45,"Squat":1.4,"Leg press":2.5,"Lunges":.8,"Deadlift":1.7,"Romanian deadlift":1.2,"Leg curl":.7,"Hip thrust":1.6,"Calf raise":1.3,"Crunches":.4,"Hanging leg raise":.4};
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 function loadEffect(e,bw,p){
   const std=e.std||STD[e.act],total=(+e.load||0)+(bw||0)*p.kg;
@@ -311,9 +312,9 @@ let db=null;
 /* Reads free text into scored activities when Claude is unavailable, and for the live hint. */
 const ALIAS=[
  [/incline/,"Incline dumbbell press"],[/bench|bankdruk/,"Bench press"],[/push.?ups?|opdruk/,"Push-ups"],[/\bdips?\b/,"Dips"],[/pull.?ups?|chin.?ups?|optrek/,"Pull-ups"],[/lat.?pull/,"Lat pulldown"],
- [/rowing|roeien|geroeid/,"Rowing machine"],[/\brows?\b/,"Barbell row"],[/overhead|shoulder press|\bohp\b|schouderpers/,"Overhead press"],[/lateral/,"Lateral raise"],
+ [/rowing|roeien|geroeid/,"Rowing machine"],[/\brows?\b/,"Barbell row"],[/overhead|shoulder press|\bohp\b|schouderpers/,"Overhead press"],[/(dumb+[ae]l+s?|\bdbs?)\s*(bench|chest)?\s*press|chest press|borstpers/,"Bench press"],[/lateral/,"Lateral raise"],
  [/leg.?press/,"Leg press"],[/leg.?curl/,"Leg curl"],[/leg.?raise/,"Hanging leg raise"],[/curls?\b/,"Biceps curl"],[/tricep/,"Triceps extension"],[/squats?|hurk/,"Squat"],[/lunges?/,"Lunges"],
- [/\brdl\b|romanian/,"Romanian deadlift"],[/deadlift/,"Deadlift"],[/hip.?thrust/,"Hip thrust"],[/calf|calves|kuit/,"Calf raise"],[/crunch|sit.?ups?|buikspier/,"Crunches"],
+ [/\brdl\b|romanian/,"Romanian deadlift"],[/deadlift/,"Deadlift"],[/hip.?thrust/,"Hip thrust"],[/calf|calves|kuit/,"Calf raise"],[/crunch|sit.?ups?|buikspier/,"Crunches"],[/side.?plank|zijplank/,"Side plank"],[/plank/,"Plank"],[/wall.?sit|muurzit/,"Wall sit"],
  [/\b(ran|run|running|jog\w*|gelopen|lopen|loop)\b/,"Running"],[/walk|wandel/,"Walking"],[/cycl|\bbike|biked|fiets/,"Cycling"],[/swim|swam|zwem|gezwommen/,"Swimming"],[/hike|hiking/,"Hiking"],
  [/football|soccer|voetbal/,"Football"],[/basket/,"Basketball"],[/tennis/,"Tennis"],[/\bbox/,"Boxing"],[/climb|klim|boulder/,"Climbing"],[/hiit/,"HIIT"],[/jump.?rope|touwspring/,"Jump rope"],[/danc|dans/,"Dancing"],[/yoga/,"Yoga"]
 ];
@@ -329,9 +330,12 @@ function readLocal(text){
     if(!hit){const last=items[items.length-1];if(kg&&last&&last.kind==="lift"&&!last.load)last.load=dec(kg[1]||kg[2]);else unread.push(c);return}
     const act=hit[1],effort=/all.?out|\bmax|\bhard|zwaar|intens|sprint/.test(l)?2:/easy|light|rustig|licht|chill/.test(l)?0:1;
     if(LIFTS[act]){
-      const load=(kg?dec(kg[1]||kg[2]):0)*(/\b(2|two|twee)\s*(dumb+[ae]l+s?|halters?)\b/.test(l)?2:1),x=l.match(/(\d+)\s*(?:x|×|\*|sets?\s*(?:of|van)|series?\s*(?:of|van))\s*(\d+)/),n=l.replace(KG," ").match(/\d+/);
+      const load=(kg?dec(kg[1]||kg[2]):0)*(/dumb+[ae]l|dumbel|halter|\bdbs?\b/.test(l)&&!/\b(one|1|een|één)\s*(dumb|halter|arm)|single|goblet|enkel/.test(l)?2:1),x=l.match(/(\d+)\s*(?:x|×|\*|sets?\s*(?:of|van)|series?\s*(?:of|van))\s*(\d+)/),n=l.replace(KG," ").match(/\d+/);
       let sets=3,reps=10;
-      if(x){sets=+x[1];reps=+x[2]}else if(n){sets=Math.max(1,Math.ceil(+n[0]/15));reps=Math.round(+n[0]/sets)}
+      const hold=/^(Plank|Side plank|Wall sit)$/.test(act);
+      if(hold){const sec=l.match(/(\d+(?:[.,]\d+)?)\s*(s|sec|secs|seconds?|seconden)\b/),mn=l.match(/(\d+(?:[.,]\d+)?)\s*(m|min|mins|minutes?|minuten)\b/),sx=l.match(/(\d+)\s*(?:x|×|\*)/);
+        const t=sec?dec(sec[1]):mn?dec(mn[1])*60:60;sets=sx?+sx[1]:1;reps=Math.max(1,Math.round(t/3))}
+      else if(x){sets=+x[1];reps=+x[2]}else if(n){sets=Math.max(1,Math.ceil(+n[0]/15));reps=Math.round(+n[0]/sets)}
       items.push({kind:"lift",act,sets,reps,load,effort});
     }else{
       let min=0;
@@ -379,12 +383,12 @@ async function understand(text){
   try{
     const token=await firebase.auth().currentUser.getIdToken();
     const r=await fetch("/.netlify/functions/read-workout",{method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+token},body:JSON.stringify({text})});
-    if(r.ok)return cleanAI(await r.json());
-    const why=(await r.json().catch(()=>({}))).error||"";
-    aiWhy=r.status===404?"the AI file isn't in netlify/functions":/GEMINI_API_KEY/.test(why)?"the GEMINI_API_KEY is missing in Netlify":r.status===401?"your login couldn't be checked":r.status===502?"Gemini refused the key or is busy":"error "+r.status;
+    if(r.ok)return{...cleanAI(await r.json()),reader:"ai"};
+    const j=await r.json().catch(()=>({})),why=j.error||"";
+    aiWhy=r.status===404?"the AI file isn't in netlify/functions":/GEMINI_API_KEY/.test(why)?"the GEMINI_API_KEY is missing in Netlify":r.status===401?"your login couldn't be checked":r.status===502?"Gemini said "+((j.details||[]).join(", ")||"no answer"):"error "+r.status;
   }catch(e){aiWhy="the site couldn't reach the AI"}
   toast("AI reader unavailable ("+aiWhy+"), so the simple reader was used.");
-  return readLocal(text);
+  return{...readLocal(text),reader:"simple"};
 }
 function sync(){
   S.entries=S.posts.flatMap(p=>(p.items||[]).map((e,i)=>({...e,side:p.side,date:p.date,at:(p.at||0)+i})));
@@ -511,6 +515,7 @@ function render(){
     if(r.protein!=null)chips.push(`<span class="chip">${esc(r.protein)} g protein</span>`);
     if(r.sleep!=null)chips.push(`<span class="chip">${esc(r.sleep)} h sleep</span>`);
     (p.unread||[]).forEach(u=>chips.push(`<span class="chip miss">Not counted: ${esc(u)}</span>`));
+    if(p.reader==="simple")chips.push(`<span class="chip miss">Read by simple reader. Delete and repost to let the AI read it.</span>`);
     return`<li class="post"><span class="sw" style="background:var(--${p.side==="a"?"ion":"plasma"})"></span><div style="min-width:0"><span class="by">${esc(pl.name)}<time>${S.period==="day"?"":esc(p.date)+" "}${tm}</time></span><p>${esc(p.text)}</p><div class="chips">${chips.join("")}</div></div>${p.side===S.me?`<button data-del="${esc(p.id)}" aria-label="Delete post">&#215;</button>`:"<span></span>"}</li>`}).join("");
   setPressed($("period"),"p",S.period);
   $("who").innerHTML=`<span style="padding:9px 14px">${S.me?"Signed in as <strong>"+esc(S.players[S.me].name)+"</strong>":"Signing in"}</span>${S.me?'<button id="out" type="button">Log out</button>':""}`;
