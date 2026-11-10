@@ -41,7 +41,9 @@ button,input,select{font:inherit;color:inherit}
 .score{position:absolute;bottom:62px;display:grid;gap:0;pointer-events:none;max-width:44%;min-width:0}
 .score.a{left:22px}.score.b{right:22px;text-align:right}
 .score .name{font:700 clamp(1rem,2.4vw,1.5rem)/1.2 var(--display);overflow-wrap:anywhere}
-.score .pts{font:700 clamp(3.2rem,9vw,6.4rem)/.95 var(--display);font-variant-numeric:tabular-nums;transform:perspective(500px) rotateY(16deg);transform-origin:left}
+.score .unit{font:400 .7rem/1.4 var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--dim)}
+.score .sc{font:600 .8rem/1.4 var(--mono);color:var(--text);font-variant-numeric:tabular-nums}
+.score .pts{font:700 clamp(2.4rem,7.4vw,5.6rem)/.95 var(--display);font-variant-numeric:tabular-nums;transform:perspective(500px) rotateY(16deg);transform-origin:left}
 .score.b .pts{transform:perspective(500px) rotateY(-16deg);transform-origin:right}
 .score.a .pts,.score.a .name{color:var(--ion)}.score.b .pts,.score.b .name{color:var(--plasma)}
 .tug{position:absolute;left:22px;right:22px;bottom:18px;display:grid;gap:6px;pointer-events:none}
@@ -143,8 +145,8 @@ textarea:focus{border-color:var(--me)}
   <section class="arena" aria-label="Head-to-head 3D view of both athletes">
     <canvas id="gl" aria-hidden="true"></canvas>
     <div class="verdict"><p id="verdict"></p><span class="lbl hint">Drag to rotate. Muscles glow as you train them.</span></div>
-    <div class="score a"><span class="name" id="na"></span><span class="pts" id="sa">0</span></div>
-    <div class="score b"><span class="name" id="nb"></span><span class="pts" id="sb">0</span></div>
+    <div class="score a"><span class="name" id="na"></span><span class="pts" id="sa">0</span><span class="unit">kcal burned</span><span class="sc" id="sca"></span></div>
+    <div class="score b"><span class="name" id="nb"></span><span class="pts" id="sb">0</span><span class="unit">kcal burned</span><span class="sc" id="scb"></span></div>
     <div class="tug"><div class="bar"><span id="tug" style="width:50%"></span></div></div>
   </section>
 
@@ -372,13 +374,16 @@ function cleanAI(o){
   if(o.sleep!=null&&num(o.sleep,1,16,0))recovery.sleep=num(o.sleep,1,16,0);
   return{items,recovery,unread:(Array.isArray(o.unread)?o.unread:[]).slice(0,8).map(s=>String(s).slice(0,80))};
 }
+let aiWhy="";
 async function understand(text){
   try{
     const token=await firebase.auth().currentUser.getIdToken();
     const r=await fetch("/.netlify/functions/read-workout",{method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+token},body:JSON.stringify({text})});
     if(r.ok)return cleanAI(await r.json());
-  }catch(e){}
-  toast("AI reader is unavailable, so the simple reader was used.");
+    const why=(await r.json().catch(()=>({}))).error||"";
+    aiWhy=r.status===404?"the AI file isn't in netlify/functions":/GEMINI_API_KEY/.test(why)?"the GEMINI_API_KEY is missing in Netlify":r.status===401?"your login couldn't be checked":r.status===502?"Gemini refused the key or is busy":"error "+r.status;
+  }catch(e){aiWhy="the site couldn't reach the AI"}
+  toast("AI reader unavailable ("+aiWhy+"), so the simple reader was used.");
   return readLocal(text);
 }
 function sync(){
@@ -479,7 +484,7 @@ function hint(){
 function render(){
   const {a:pa,b:pb}=S.players, ra=analyse("a",S.entries,pa,S.days), rb=analyse("b",S.entries,pb,S.days), keep=keepFn(), A=sumRange(ra,keep), B=sumRange(rb,keep);
   const sa=Math.round(A.score),sb=Math.round(B.score),tot=sa+sb;
-  $("na").textContent=pa.name;$("nb").textContent=pb.name;$("sa").textContent=sa;$("sb").textContent=sb;
+  $("na").textContent=pa.name;$("nb").textContent=pb.name;$("sa").textContent=Math.round(A.kcal).toLocaleString("en-US");$("sb").textContent=Math.round(B.kcal).toLocaleString("en-US");$("sca").textContent="Score "+sa;$("scb").textContent="Score "+sb;
   $("tug").style.width=(tot?sa/tot*100:50)+"%";
   $("dl").textContent=rangeLabel();$("scope").textContent=rangeLabel();
   const off=S.period==="all";$("prev").disabled=off;$("next").disabled=off;$("prev").style.opacity=$("next").style.opacity=off?.35:1;
