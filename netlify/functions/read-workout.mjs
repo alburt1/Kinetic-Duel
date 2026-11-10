@@ -56,16 +56,16 @@ export default async req => {
   if (!text.trim()) return reply(400, { error: "Empty post" });
   // Netlify stops functions after 10 seconds, so every attempt shares a 9-second budget.
   const deadline = Date.now() + 9000, errors = [];
+  // Fastest models first, each with its own short time limit, so a slow one can't use up the whole budget.
   const attempts = [
-    [process.env.GEMINI_MODEL || "gemini-flash-latest", { thinkingConfig: { thinkingLevel: "low" } }],
-    ["gemini-flash-lite-latest", {}],
-    ["gemini-flash-latest", {}],
-    ["gemini-2.5-flash", { thinkingConfig: { thinkingBudget: 0 } }]
+    [process.env.GEMINI_MODEL || "gemini-flash-lite-latest", {}, 4500],
+    ["gemini-2.5-flash", { thinkingConfig: { thinkingBudget: 0 } }, 3500],
+    ["gemini-2.5-flash-lite", {}, 3000]
   ];
-  for (const [model, extra] of attempts) {
+  for (const [model, extra, cap] of attempts) {
     const left = deadline - Date.now();
     if (left < 1500) { errors.push("out of time"); break; }
-    const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), left);
+    const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), Math.min(left, cap));
     try {
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: "POST", signal: ctrl.signal,
