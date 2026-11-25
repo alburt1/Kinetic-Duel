@@ -98,6 +98,9 @@ textarea:focus{border-color:var(--me)}
 .post p{margin:2px 0 0;overflow-wrap:anywhere}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .chip{font:400 .7rem/1.4 var(--mono);padding:4px 8px;background:var(--deck-2);border:1px solid var(--line)}
+.note{display:block;width:100%;color:var(--dim);font-size:.8rem;line-height:1.35}
+.reread{min-height:34px;padding:4px 10px;font-size:.82rem}
+#rrall{justify-self:start}
 .chip.miss{color:var(--danger);border-style:dashed}
 .post button{width:42px;height:42px;background:none;border:0;color:var(--dim);cursor:pointer;font-size:1.1rem}
 .past{list-style:none;margin:0;padding:0;display:grid}
@@ -165,11 +168,12 @@ textarea:focus{border-color:var(--me)}
     <section class="panel tilt">
       <div class="head"><h2>What did you do today?</h2><div class="seg" id="who" role="group" aria-label="Posting as"></div></div>
       <form id="f" style="display:grid;gap:10px">
-        <label class="lbl" for="txt">Separate things with commas. English or Dutch</label>
-        <textarea id="txt" maxlength="600" placeholder="bench 4x8 at 70kg all out, ran 5km, 140g protein, slept 8 hours"></textarea>
+        <label class="lbl" for="txt">Write it like a message. Name gym machines and their level for better numbers</label>
+        <textarea id="txt" maxlength="600" placeholder="bench 4x8 at 70kg all out, 20 min on the Concept2 rower damper 6, plank 1 min, 140g protein, slept 8 hours"></textarea>
         <div class="send"><span class="lbl" id="read" aria-live="polite"></span><button class="go" id="post" type="submit">Post</button></div>
       </form>
       <div class="head"><h3>Feed</h3><span class="lbl" id="fc"></span></div>
+      <button class="ghost" id="rrall" type="button" hidden></button>
       <ul class="feed" id="feed"></ul><p class="empty" id="fe" hidden></p>
     </section>
 
@@ -268,7 +272,7 @@ function calcEntry(e,p){
   }else{
     const base=CARDIO[e.act],met=e.met||(base&&base.met[e.effort]),d=e.muscles||base; if(!met) return out;
     out.min=e.min;
-    out.kcal=(met-1)*p.kg*e.min/60;
+    out.kcal=e.watts?e.watts*4/60*e.min:(met-1)*p.kg*e.min/60;
     if(d) for(const m in SHARE) if(d[m]) out.stim[m]=d[m]*f*e.min/30;
   }
   return out;
@@ -363,12 +367,17 @@ function cleanAI(o){
       const e={kind:"lift",act,sets:num(i.sets,1,50,3),reps:num(i.reps,1,200,10),load:num(i.load,0,1000,0),effort};
       if(muscles){e.muscles=muscles;e.bw=num(i.bw,0,1,0)}
       if(num(i.std,.05,4,0))e.std=num(i.std,.05,4,0);
+      if(i.note)e.note=String(i.note).slice(0,120);
       return e;
     }
     if(i.kind==="cardio"){
       const met=num(i.met,1.1,20,0),muscles=cleanMuscles(i.muscles,2);if(!met&&!CARDIO[act])return null;
       const e={kind:"cardio",act,min:num(i.min,1,600,30),effort};
       if(met)e.met=met;if(muscles)e.muscles=muscles;
+      if(i.machine)e.machine=String(i.machine).slice(0,60);
+      if(i.level!=null&&i.level!=="")e.level=String(i.level).slice(0,24);
+      if(num(i.watts,10,1500,0))e.watts=Math.round(num(i.watts,10,1500,0));
+      if(i.note)e.note=String(i.note).slice(0,120);
       return e;
     }
     return null;
@@ -376,18 +385,26 @@ function cleanAI(o){
   const recovery={};
   if(o.protein!=null&&num(o.protein,1,500,0))recovery.protein=num(o.protein,1,500,0);
   if(o.sleep!=null&&num(o.sleep,1,16,0))recovery.sleep=num(o.sleep,1,16,0);
-  return{items,recovery,unread:(Array.isArray(o.unread)?o.unread:[]).slice(0,8).map(s=>String(s).slice(0,80))};
+  return{items,recovery,unread:(Array.isArray(o.unread)?o.unread:[]).slice(0,8).map(s=>String(s).slice(0,80)),searched:!!o.searched};
 }
 let aiWhy="";
-async function understand(text){
+async function askAI(url,text,ms){
+  const token=await firebase.auth().currentUser.getIdToken(),me=S.players[S.me]||{};
+  const ctrl=new AbortController(),t=setTimeout(()=>ctrl.abort(),ms);
   try{
-    const token=await firebase.auth().currentUser.getIdToken();
-    const r=await fetch("/.netlify/functions/read-workout",{method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+token},body:JSON.stringify({text})});
-    if(r.ok)return{...cleanAI(await r.json()),reader:"ai"};
+    const r=await fetch(url,{method:"POST",signal:ctrl.signal,headers:{"content-type":"application/json",authorization:"Bearer "+token},body:JSON.stringify({text,kg:me.kg,cm:me.cm})});
+    if(r.ok)return{ok:true,data:{...cleanAI(await r.json()),reader:"ai"}};
     const j=await r.json().catch(()=>({})),why=j.error||"";
-    aiWhy=r.status===404?"the AI file isn't in netlify/functions":/GEMINI_API_KEY/.test(why)?"the GEMINI_API_KEY is missing in Netlify":r.status===401?"your login couldn't be checked":r.status===502&&j.details?"Gemini said "+j.details.join(", "):r.status>=500?"the AI took longer than 10 seconds":"error "+r.status;
-  }catch(e){aiWhy="the site couldn't reach the AI"}
-  toast("AI reader unavailable ("+aiWhy+"), so the simple reader was used.");
+    return{ok:false,why:r.status===404?"not found":/GEMINI_API_KEY/.test(why)?"the GEMINI_API_KEY is missing in Netlify":r.status===401?"your login couldn't be checked":j.details?"Gemini said "+j.details.join(", "):"error "+r.status};
+  }catch(e){return{ok:false,why:e.name==="AbortError"?"no answer in time":"the site couldn't reach the AI"}}
+  finally{clearTimeout(t)}
+}
+async function understand(text,quiet){
+  let r=await askAI("/api/read-workout",text,40000);
+  if(!r.ok){const first=r.why;r=await askAI("/.netlify/functions/read-workout",text,11000);if(!r.ok&&first!=="not found")r.why=first}
+  if(r.ok)return r.data;
+  aiWhy=r.why;
+  if(!quiet)toast("AI reader unavailable ("+aiWhy+"), so the simple reader was used. Tap Re-read with AI later.");
   return{...readLocal(text),reader:"simple"};
 }
 function sync(){
@@ -419,7 +436,8 @@ function vsRow(label,a,b,fn,invertNone){
 function setPressed(box,attr,val){box.querySelectorAll("button").forEach(b=>b.setAttribute("aria-pressed",b.dataset[attr]===val))}
 function chip(e,p){
   const r=calcEntry(e,p),d=e.kind==="lift"?`${e.sets}x${e.reps}${+e.load?" "+e.load+"kg":""}`:`${e.min} min`;
-  return`<span class="chip">${esc(e.act)} ${esc(d)} · ${fmt(r.kcal)} kcal</span>`;
+  const mach=e.kind==="cardio"&&(e.machine||e.level||e.watts)?` (${[e.machine,e.level!=null?"level "+e.level:"",e.watts?"≈"+e.watts+" W":""].filter(Boolean).join(", ")})`:"";
+  return`<span class="chip">${esc(e.act)}${esc(mach)} ${esc(d)} · ${fmt(r.kcal)} kcal</span>`;
 }
 function iso8601Week(s){const d=parse(s);d.setDate(d.getDate()+3-((d.getDay()+6)%7));const j=new Date(d.getFullYear(),0,4);return 1+Math.round(((d-j)/864e5-3+((j.getDay()+6)%7))/7)}
 function weekResult(w){
@@ -508,6 +526,8 @@ function render(){
   $("wk").innerHTML=ks.map((k,i)=>`<button data-d="${k}" class="${k===S.date?"on":""}" aria-label="${k}: ${Math.round(vals[i][0])} versus ${Math.round(vals[i][1])}"><div class="plot"><i class="a" style="height:${vals[i][0]/top*100}%"></i><i class="b" style="height:${vals[i][1]/top*100}%"></i></div><span class="lbl" style="text-align:center">${parse(k).toLocaleDateString("en-GB",{weekday:"short"})}</span></button>`).join("");
   // Feed
   const items=S.posts.filter(p=>keep(p.date)).sort((x,y)=>(y.at||0)-(x.at||0));
+  const mine=S.posts.filter(p=>p.side===S.me&&p.reader!=="ai").length;
+  $("rrall").hidden=!mine;if(!$("rrall").disabled)$("rrall").textContent=`Re-read my ${mine} older post${mine===1?"":"s"} with the AI`;
   $("fc").textContent=S.period==="day"&&S.date===today?"Clears at midnight":items.length+(items.length===1?" post":" posts");
   $("fe").hidden=!!items.length;$("fe").textContent=S.date===today&&S.period==="day"?"Nobody has posted today. Go first.":"No posts for this period.";
   $("feed").innerHTML=items.slice(0,80).map(p=>{
@@ -515,7 +535,12 @@ function render(){
     if(r.protein!=null)chips.push(`<span class="chip">${esc(r.protein)} g protein</span>`);
     if(r.sleep!=null)chips.push(`<span class="chip">${esc(r.sleep)} h sleep</span>`);
     (p.unread||[]).forEach(u=>chips.push(`<span class="chip miss">Not counted: ${esc(u)}</span>`));
-    if(p.reader==="simple")chips.push(`<span class="chip miss">Read by simple reader. Delete and repost to let the AI read it.</span>`);
+    const own=p.side===S.me,old=p.reader!=="ai";
+    const notes=p.reader==="ai"?(p.items||[]).filter(e=>e.note).map(e=>`<small class="note">${esc(e.act)}: ${esc(e.note)}</small>`).join(""):"";
+    if(old)chips.push(`<span class="chip miss">Read by the simple reader, so the numbers may be off.</span>`);
+    if(old&&own)chips.push(`<button class="ghost reread" type="button" data-rr="${esc(p.id)}" ${rereading.has(p.id)?"disabled":""}>${rereading.has(p.id)?"Reading…":"Re-read with AI"}</button>`);
+    if(p.searched)chips.push(`<span class="chip">Checked online</span>`);
+    chips.push(notes);
     return`<li class="post"><span class="sw" style="background:var(--${p.side==="a"?"ion":"plasma"})"></span><div style="min-width:0"><span class="by">${esc(pl.name)}<time>${S.period==="day"?"":esc(p.date)+" "}${tm}</time></span><p>${esc(p.text)}</p><div class="chips">${chips.join("")}</div></div>${p.side===S.me?`<button data-del="${esc(p.id)}" aria-label="Delete post">&#215;</button>`:"<span></span>"}</li>`}).join("");
   setPressed($("period"),"p",S.period);
   $("who").innerHTML=`<span style="padding:9px 14px">${S.me?"Signed in as <strong>"+esc(S.players[S.me].name)+"</strong>":"Signing in"}</span>${S.me?'<button id="out" type="button">Log out</button>':""}`;
@@ -542,13 +567,13 @@ let posting=false;
 $("f").addEventListener("submit",async ev=>{
   ev.preventDefault();
   const text=$("txt").value.trim();if(!text||posting||!S.me)return;
-  posting=true;const b=$("post");b.disabled=true;b.textContent="Calculating";
+  posting=true;const b=$("post");b.disabled=true;b.textContent="Reading";const slow=setTimeout(()=>{b.textContent="Looking it up"},6000);
   try{
     const read=await understand(text),doc={side:S.me,date:today,at:Date.now(),text,...read};
     await db.doc("athletes/"+S.uid).collection("posts").add(doc);
     $("txt").value="";S.date=today;S.period="day";render();
   }catch(x){writeErr(x)}
-  posting=false;b.disabled=false;b.textContent="Post";
+  clearTimeout(slow);posting=false;b.disabled=false;b.textContent="Post";
 });
 $("prof").addEventListener("submit",async ev=>{
   ev.preventDefault();
@@ -560,6 +585,25 @@ $("prof").addEventListener("submit",async ev=>{
 $("feed").onclick=async e=>{
   const b=e.target.closest("[data-del]");if(!b)return;
   try{await db.doc("athletes/"+S.uid+"/posts/"+b.dataset.del).delete();toast("Post deleted")}catch(x){writeErr(x)}
+};
+const rereading=new Set();
+async function reread(id){
+  const p=S.posts.find(x=>x.id===id);if(!p||p.side!==S.me||rereading.has(id))return false;
+  rereading.add(id);render();
+  const r=await understand(p.text,true);
+  let ok=false;
+  if(r.reader==="ai"){try{await db.doc("athletes/"+S.uid+"/posts/"+id).update({items:r.items,recovery:r.recovery,unread:r.unread,reader:"ai",searched:r.searched});ok=true}catch(x){writeErr(x)}}
+  rereading.delete(id);render();return ok;
+}
+$("feed").addEventListener("click",async e=>{
+  const b=e.target.closest("[data-rr]");if(!b)return;
+  toast(await reread(b.dataset.rr)?"Re-read by the AI":"The AI couldn't read it right now ("+aiWhy+"). Try again in a minute.");
+});
+$("rrall").onclick=async()=>{
+  const todo=S.posts.filter(p=>p.side===S.me&&p.reader!=="ai").map(p=>p.id);
+  let done=0;$("rrall").disabled=true;
+  for(const id of todo){$("rrall").textContent=`Re-reading ${done+1} of ${todo.length}…`;if(await reread(id))done++}
+  $("rrall").disabled=false;toast(done===todo.length?(done===1?"Post re-read by the AI":`All ${done} posts re-read by the AI`):`${done} of ${todo.length} re-read. Try the rest again later.`);render();
 };
 $("pv").onclick=()=>{const r=weekResult(monday(today));if(r)openWinner(r,true);else toast("Post a workout this week first.")};
 $("past").onclick=e=>{const b=e.target.closest("[data-w]");if(b&&S.weeks[b.dataset.w])openWinner(S.weeks[b.dataset.w],false)};
