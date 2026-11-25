@@ -37,3 +37,6 @@ Works in English and Dutch. Put separate things between commas.
 
 ## AI reader
 Posts are read by Gemini through `netlify/functions/read-workout.mjs`. Add a free key from https://aistudio.google.com/apikey to Netlify as the environment variable `GEMINI_API_KEY`, then redeploy. Without it, the site uses the simple built-in reader.
+
+## AI reader with web lookup
+Posts are read by `netlify/edge-functions/read-workout.js` at `/api/read-workout`. It can wait up to 40 seconds, so the AI can search the web (exercise names, gym machine brands and levels, MET values). If it fails, the page falls back to `netlify/functions/read-workout.mjs`, then to the simple built-in reader. Posts read by the simple reader get a **Re-read with AI** button.
